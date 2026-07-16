@@ -1426,71 +1426,8 @@ https://cdn.jsdelivr.net/npm/image-compare-viewer@1.6.2/dist/image-compare-viewe
                });
           </script>
 
-      <!-- ====== DIAGNÓSTICO TEMPORÁRIO: captura o que o drlead envia/recebe ====== -->
-      <script>
-      (function () {
-          // caixa visível na página para ver o resultado sem abrir o DevTools
-          function showLog(label, data) {
-              var box = document.getElementById('__diag');
-              if (!box) {
-                  box = document.createElement('div');
-                  box.id = '__diag';
-                  box.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:999999;width:380px;max-height:45vh;overflow:auto;background:#111;color:#0f0;font:12px/1.4 monospace;padding:8px;border:2px solid #0f0;border-radius:6px;white-space:pre-wrap;';
-                  document.body.appendChild(box);
-              }
-              var txt;
-              try { txt = typeof data === 'string' ? data : JSON.stringify(data); }
-              catch (e) { txt = String(data); }
-              box.textContent += '\n[' + label + '] ' + txt + '\n';
-              box.scrollTop = box.scrollHeight;
-          }
-
-          // interceptar fetch
-          var origFetch = window.fetch;
-          window.fetch = function (input, init) {
-              var url = typeof input === 'string' ? input : (input && input.url);
-              showLog('FETCH ' + (init && init.method || 'GET'), url);
-              if (init && init.body) showLog('BODY', init.body);
-              return origFetch.apply(this, arguments).then(function (resp) {
-                  // clona para ler sem consumir
-                  resp.clone().text().then(function (t) {
-                      showLog('RESP ' + resp.status, t.slice(0, 600));
-                  }).catch(function () {});
-                  return resp;
-              });
-          };
-
-          // interceptar XHR também (caso use XMLHttpRequest)
-          var origOpen = XMLHttpRequest.prototype.open;
-          var origSend = XMLHttpRequest.prototype.send;
-          XMLHttpRequest.prototype.open = function (m, u) {
-              this.__url = u; this.__method = m;
-              return origOpen.apply(this, arguments);
-          };
-          XMLHttpRequest.prototype.send = function (body) {
-              showLog('XHR ' + this.__method, this.__url);
-              if (body) showLog('XHR BODY', body);
-              var self = this;
-              this.addEventListener('load', function () {
-                  showLog('XHR RESP ' + self.status, (self.responseText || '').slice(0, 600));
-              });
-              return origSend.apply(this, arguments);
-          };
-
-          // capturar erros e o retorno do callback
-          window.addEventListener('error', function (e) {
-              showLog('JS ERROR', (e.message || '') + ' @ ' + (e.filename || '') + ':' + (e.lineno || ''));
-          });
-
-          // mostrar quando a página for redirecionar
-          var origAssign = window.location.assign ? window.location.assign.bind(window.location) : null;
-          window.__diag = { show: showLog };
-      })();
-      </script>
-
       <script src="https://snippet.infothroat.com/dist/api/lead-1.1.0.min.js"></script>
 <script>
-    // função de redirecionamento para a página de obrigado (usada pelo drlead e pelo fallback)
     function irParaObrigado(response) {
         var thanks = "./thanks";
         // se a API retornar uma URL de destino, ela tem prioridade
@@ -1501,11 +1438,10 @@ https://cdn.jsdelivr.net/npm/image-compare-viewer@1.6.2/dist/image-compare-viewe
                 thanks = response.data.redirect_url;
             }
         } catch (e) {}
-        window.location.href = thanks;
+        // redirecionamento imediato (usa replace p/ não deixar a página do form no histórico)
+        window.location.replace(thanks);
     }
 
-    // Inicializa a API de pedidos SOMENTE se ela carregou.
-    // (Em file:// ou domínios não autorizados a biblioteca pode não expor 'drlead')
     if (typeof drlead !== 'undefined' && drlead && typeof drlead.init === 'function') {
         drlead.init({
             params: {
@@ -1521,28 +1457,17 @@ https://cdn.jsdelivr.net/npm/image-compare-viewer@1.6.2/dist/image-compare-viewe
                 sub5: drlead.formInputGet("sub5") || drlead.queryGet("sub5"),
             },
             callback: function (error, response) {
-                // ====== DIAGNÓSTICO ======
-                try { window.__diag && window.__diag.show('CALLBACK error', error); } catch (e) {}
-                try { window.__diag && window.__diag.show('CALLBACK response', response); } catch (e) {}
-
                 if (!error) {
                     irParaObrigado(response);
                 }
             },
-            before: function () {
-                // before request done
-                try { window.__diag && window.__diag.show('BEFORE', 'drlead iniciou envio'); } catch (e) {}
-            }
+            before: function () {}
         });
     } else {
-        // A biblioteca de pedidos não está disponível (ex.: abrindo por file://).
-        // Fallback: ao enviar o formulário, redireciona para a página de obrigado.
-        try { window.__diag && window.__diag.show('AVISO', 'drlead indisponível — usando fallback de redirecionamento'); } catch (e) {}
-        window.__drleadOk = false;
+        // Fallback: se a biblioteca não carregar, redireciona ao enviar o formulário
         $(function () {
             $('.orderForm').on('submit', function (e) {
                 e.preventDefault();
-                try { window.__diag && window.__diag.show('FALLBACK', 'enviando para ./thanks'); } catch (e) {}
                 irParaObrigado();
             });
         });
